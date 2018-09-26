@@ -400,9 +400,9 @@ class DeepPairWiseWord():
 
 		if glove_mode is True and update_inv_mode is False and update_oov_mode is False:
 			try:
-				sentA = tf.concat([tf.expand_dims(self.true_dict[word]) for word in lsents], 0)
+				sentA = tf.concat([tf.expand_dims(tf.cast(self.true_dict[word],tf.float32)) for word in lsents], 0)
 				# sentA = tf.Variable(sentA)  # .cuda()
-				sentB = tf.concat([tf.expand_dims(self.true_dict[word]) for word in rsents], 0)
+				sentB = tf.concat([tf.expand_dims(tf.cast(self.true_dict[word],tf.float32)) for word in rsents], 0)
 				# sentB = tf.Variable(sentB)  # .cuda()
 			except:
 				print(lsents)
@@ -942,7 +942,7 @@ class DeepPairWiseWord():
 			#if torch.cuda.is_available():
 			#	indice=indice.cuda()
 			#output_word = self.copied_word_embedding(indice).view(1,-1)
-			output_word = tf.reshape(self.dict[word],(1,-1))
+			output_word = tf.reshape(self.true_dict[word],(1,-1))
 
 			if firstFlag:
 				output, extra_loss = self.mix_cell(word, output_word, output_char)
@@ -974,7 +974,7 @@ class DeepPairWiseWord():
 			#if torch.cuda.is_available():
 			#	indice = indice.cuda()
 			#output_word = self.copied_word_embedding(indice).view(1, -1)
-			output_word = tf.reshape(self.dict[word],(1,-1))
+			output_word = tf.reshape(self.true_dict[word],(1,-1))
 
 			if firstFlag:
 				output, extra_loss = self.mix_cell(word, output_word, output_char)
@@ -1065,6 +1065,7 @@ if __name__ == "__main__":
 	# other configuration and initializations
 	num_epochs = 20
 	character_ngrams_overlap = False
+	
 	token_list = []
 	true_dict = {}
 	fake_dict = {}
@@ -1253,24 +1254,14 @@ if __name__ == "__main__":
 		num_oov = 0
 		num_inv = 0
 
+		true_dict, fake_dict, oov = cPickle.load(open(basepath + '/data/' + task + 'W_emb.p', "rb"))
+
 		if task == 'msrp':
 			EMBEDDING_DIM = 300
-			wv_arr = load_text_vec(basepath + '/glove_embeddings/glove.840B.300d.txt')
-
 
 		elif task == 'url' or task == 'pit':
-			EMBEDDING_DIM = 200
-			wv_arr = load_text_vec(basepath + '/glove_embeddings/glove.twitter.27B.200d.txt')
+			EMBEDDING_DIM = 200			
 
-		for word in token_list:
-			fake_dict[word] = tf.random_uniform([EMBEDDING_DIM],minval=-0.05,max_val=0.05)
-			try:
-				true_dict[word] = wv_arr[word]
-				num_inv += 1
-			except:
-				num_oov += 1
-				oov.append(word)
-				true_dict[word] = tf.random_uniform([EMBEDDING_DIM],minval=-0.05,max_val=0.05)
 
 		print('finished loading word vector, there are ' + str(num_inv) + ' INV words and ' + str(
 			num_oov) + ' OOV words.')
@@ -1370,8 +1361,8 @@ if __name__ == "__main__":
 							output, _ = model(sentA, sentB)
 							output = tf.devide(output + 1,2)
 
-							curr_out = session.run(output)
-							predicted.append(output[1])
+							curr_out = session.run(output,{model.inputs:[sentA,sentB]})
+							predicted.append(curr_out[1])
 							gold.append(test_labels[test_i])
 
 						_ , result = URL_maxF1_eval(predict_result=predicted, test_data_label=gold)
@@ -1382,13 +1373,8 @@ if __name__ == "__main__":
 						print('Epoch ' + str(epoch + 1) + ' finished within ' + str(timedelta(seconds=elapsed_time))+', and current time:'+ str(datetime.now()))
 						print('Best result until now: %.6f' % max_result)
 
+					
 
-
-						saver.restore(session, path)	
-					else:
-						path = args.model_path
-						saver.restore(session, path)			
-
-			cPickle.dump(cnn_encodings,open("./result_lm/{:%Y%m%d_%H%M%S}/".format(datetime.now()) + 'lb_emd_' + args.label_freq + '.p',"wb"))
+			#	cPickle.dump(cnn_encodings,open("./result_lm/{:%Y%m%d_%H%M%S}/".format(datetime.now()) + 'lb_emd_' + args.label_freq + '.p',"wb"))
 
 

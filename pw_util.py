@@ -128,7 +128,7 @@ def readURLdata(dir,granularity):
     rsents = []
     labels = []
     #if granularity == 'word' or granularity == 'mix' or granularity == 'char' or granularity =='multi-task':
-    if 'msrp' in dir
+    if 'msrp' in dir:
         for line in open(dir + 'a.toks'):
             pieces = line.strip().split()
             lsents.append(pieces)
@@ -137,10 +137,10 @@ def readURLdata(dir,granularity):
             rsents.append(pieces)
         for line in open(dir + 'sim.txt'):
             pieces = line.strip().split()
-            labels.append(int(item))
-    
+            labels.append(int(pieces[0]))
+
     # elif granularity=='char':
-    elif 'url' in dir
+    elif 'url' in dir:
         if 'train' in dir:
             filename='Twitter_URL_Corpus_train.txt'
         else:
