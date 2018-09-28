@@ -4,7 +4,6 @@ import numpy as np
 from numpy import linalg as LA
 import math
 import os
-import torch
 import unicodedata
 from os.path import expanduser
 from collections import *
