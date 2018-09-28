@@ -7,8 +7,6 @@ import os
 import sys
 import cPickle
 import argparse
-from tensorflow import keras
-from tensorflow.keras import layers
 from datetime import datetime
 from collections import OrderedDict
 
