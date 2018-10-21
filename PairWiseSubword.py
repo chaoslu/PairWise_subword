@@ -58,27 +58,32 @@ def load_text_vec(fname):
 
 def deep_CNN_layers(Config,kernel_num,is_char):
 
+        CNN_layer = tf.keras.Sequential()
 	if is_char:
 		feature_maps = Config.char_maps[kernel_num]
 		charCNN_len = Config.charCNN_max_word_length
 		kernel_sz = (Config.char_kernels[kernel_num],Config.charCNN_embedding_size)
-		conv2d = tf.keras.layers.Conv2D(filters=feature_maps, kernel_size=kernel_sz, activation=tf.tanh(), strides=(1,1),
+		conv2d = tf.keras.layers.Conv2D(filters=feature_maps, kernel_size=kernel_sz, activation='tanh', strides=(1,1),
 		padding="VALID")
-		maxpool2d = tf.keras.layers.MaxPool2D(pool_size=(charCNN_len - kernel_sz[0] + 1,1), strides=1)(conv2d)
+		maxpool2d = tf.keras.layers.MaxPool2D(pool_size=(charCNN_len - kernel_sz[0] + 1,1), strides=1)
+                CNN_layer.add(conv2d)
+                CNN_layer.add(maxpool2d)
 	else:
 		feature_maps = Config.word_maps[kernel_num]
 		kernel_sz = (Config.kernels[kernel_num],Config.kernels[kernel_num])
-		conv2d = tf.keras.layers.Conv2D(filters=feature_maps, kernel_size=kernel_sz, activation=tf.nn.relu(), strides=(1,1), 
-		padding="SAME", kernel_initializer=tf.random_normal((kernel_sz[0],kernel_sz[1]), stddev = math.sqrt(2/(kernel_sz[0]*kernel_sz[1]*feature_maps))))
-		if kernel_num == 7:
+		conv2d = tf.keras.layers.Conv2D(filters=feature_maps, kernel_size=kernel_sz, activation='relu', strides=(1,1), 
+		padding="SAME", kernel_initializer=tf.keras.initializers.RandomNormal(stddev = math.sqrt(2/(kernel_sz[0]*kernel_sz[1]*feature_maps))))
+		if kernel_num == 5:
 			p_size = 3
 			stride = 2
 		else:
 			p_size = 2
 			stride = 1
-		maxpool2d = tf.keras.layers.MaxPool2D(pool_size=(p_size,p_size), strides=stride)(conv2d)
-
-	return maxpool2d
+		maxpool2d = tf.keras.layers.MaxPool2D(pool_size=(p_size,p_size), strides=stride)
+                CNN_layer.add(conv2d)
+                CNN_layer.add(maxpool2d)
+	
+	return CNN_layer
 
 
 class Config:
@@ -86,7 +91,7 @@ class Config:
 	hidden_dim = 250
 	num_layers = 1
 	char_maps = [50, 100, 150, 200, 200, 200, 200]
-	word_maps = [128, 164, 192, 192, 128]
+	word_maps = [128, 164, 192, 192, 128, 128]
 	kernels = [1, 2, 3, 4, 5, 6, 7]
 	charcnn_max_word_length = 20
 	charcnn_embedding_size = 15
@@ -94,8 +99,10 @@ class Config:
 
 	# valid_batch_size = 10
 
-	def __init__(self,granularity,word_mode,dict_char_ngram,word_freq,oov,tokens,lm_mode,EMBEDDING_DIM):
+
+	def __init__(self,granularity,deep_CNN,word_mode,dict_char_ngram,word_freq,oov,tokens,lm_mode,EMBEDDING_DIM):
 		self.granularity = granularity
+                self.deep_CNN = deep_CNN
 		self.tokens = tokens
 		self.dict_char_ngram = dict_char_ngram
 		self.word_freq = word_freq
@@ -118,39 +125,38 @@ class DeepPairWiseWord():
 		self.Config = Config
 		self.true_dict = true_dict
 		self.fake_dict = fake_dict
+                self.layer = []
 
 		if Config.granularity == 'char':
 			self.c2w_embedding = tf.keras.layers.Embedding(len(dict_char_ngram),50)
 			self.char_cnn_embedding = tf.keras.layers.Embedding(len(dict_char_ngram),Config.charcnn_embedding_size)
-			self.bi_lstm_c2w = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(50,return_sequence = True),merge_mode='concat')
+			self.bi_lstm_c2w = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(50,return_sequences = True),merge_mode='concat')
 
 			for i in range(7):
 				self.charCNN_filter[i] = deep_CNN_layers(self.Config,i,True)
 
 
-			self.transform_gate = tf.keras.layers.Dense(1100, activation=tf.sigmoid())
-			self.char_cnn_mlp = tf.keras.layers.Dense(1100, activation=tf.tanh())
+			self.transform_gate = tf.keras.layers.Dense(1100, activation='sigmoid')
+			self.char_cnn_mlp = tf.keras.layers.Dense(1100, activation='tanh')
 			self.down_sampling_200 = tf.keras.layers.Dense(200)
 			self.down_sampling_300 = tf.keras.layers.Dense(300)
 
 		# elif granularity == 'word':
 
-		self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(Config.hidden_dim,return_sequence = True),merge_mode='concat')
+		self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(Config.hidden_dim,return_sequences = True),merge_mode='concat')
 
 		if not Config.deep_CNN:
 			self.mlp_layer = tf.keras.Sequential()
 			self.mlp_layer.add(tf.keras.layers.Dense(16))
-			self.mlp_layer.add(tf.keras.layers.Dense(Config.num_class,activation = tf.nn.softmax()))
+			self.mlp_layer.add(tf.keras.layers.Dense(Config.num_class,activation='softmax'))
 		else:
-			for i in range(5):
-				self.layer[i] = deep_CNN_layers(self.Config,i,False)
-			self.fc1 = tf.keras.layers.Dense(128,activation=tf.nn.relu(),kernel_initializer=tf.random_uniform_initializer(-0.1,0.1),
-				bias_initializer=tf.zeros_initializer())
-			self.fc2 = tf.keras.layers.Dense(Config.num_class,activation=tf.nn.softmax(),
-				kernel_initializer=tf.random_uniform_initializer(-0.1,0.1),bias_initializer=tf.zeros_initializer())
+			for i in range(6):
+				self.layer.append(deep_CNN_layers(self.Config,i,False))
+			self.fc1 = tf.keras.layers.Dense(128,activation='relu',kernel_initializer=tf.keras.initializers.RandomUniform(minval=-0.1,maxval=0.1),bias_initializer='zero')
+			self.fc2 = tf.keras.layers.Dense(Config.num_class,activation='softmax',kernel_initializer=tf.keras.initializers.RandomUniform(minval=-0.1,maxval=0.1),bias_initializer='zero')
 		self.params = param_init(Config)
-		self.inputs = []
-		self.buid()
+		self.inputPlaceholder_A = tf.placeholder(tf.float32,[/])
+		self.build()
 
 
 	def unpack(self,bi_hidden, half_dim):
@@ -360,17 +366,17 @@ class DeepPairWiseWord():
 			padding = tf.constant([[0,0],[0, self.limit - focusCube.size(2)][0, self.limit - focusCube.size(1)]])
 			focusCube = tf.pad(focusCube, padding,mode='constant')
 
-			out = self.layer1(focusCube)
-			out = self.layer2(out)
-			out = self.layer3(out)
+			out = self.layer[0](focusCube)
+			out = self.layer[1](out)
+			out = self.layer[2](out)
 			if self.limit == 16:
-				out = self.layer5(out)
+				out = self.layer[4](out)
 			elif self.limit == 32:
-				out = self.layer4(out)
-				out = self.layer5(out)
+				out = self.layer[3](out)
+				out = self.layer[4](out)
 			elif self.limit == 48:
-				out = self.layer4(out)
-				out = self.layer5_0(out)
+				out = self.layer[3](out)
+				out = self.layer[5](out)
 				#out=self.layer5_1(out)
 			#print('debug 6: (out size)')
 			#print(out.size())
@@ -1006,7 +1012,7 @@ class DeepPairWiseWord():
 		h0 = tf.zeros(self.num_layers * 2, 1, self.Config.hidden_dim)
 		c0 = tf.zeros(self.num_layers * 2, 1, self.Config.hidden_dim)
 
-		if self.Config.granularity == 'word':
+                if self.Config.granularity == 'word':
 			input_A, input_B = self.word_layer(input_A, input_B)
 		elif self.Config.granularity == 'char':
 			input_A, input_B = self.c2w_or_cnn_layer(input_A,input_B)
@@ -1060,10 +1066,12 @@ if __name__ == "__main__":
 	task = args.task
 	granularity = args.granularity
 	character_ngrams = args.char_ngram
+        deep_CNN = args.deep_CNN
 
 	# other configuration and initializations
 	num_epochs = 20
 	character_ngrams_overlap = False
+        lm_mode = False
 
 	token_list = []
 	true_dict = {}
@@ -1253,7 +1261,7 @@ if __name__ == "__main__":
 		num_oov = 0
 		num_inv = 0
 
-		true_dict, fake_dict, oov = cPickle.load(open(basepath + '/data/' + task + 'W_emb.p', "rb"))
+		true_dict, fake_dict, oov = cPickle.load(open(basepath + '/data/' + task + '_emb.p', "rb"))
 
 		if task == 'msrp':
 			EMBEDDING_DIM = 300
@@ -1271,7 +1279,7 @@ if __name__ == "__main__":
 		print('wrong input for the second argument!')
 		sys.exit()
 
-	config = Config(granularity,word_mode,true_dict,fake_dict,dict_char_ngram,oov,token_list,lm_mode,EMBEDDING_DIM)
+	config = Config(granularity,deep_CNN,word_mode,dict_char_ngram,word_freq,oov,token_list,lm_mode,EMBEDDING_DIM)
 
 
 	# build graph and run 
@@ -1282,7 +1290,7 @@ if __name__ == "__main__":
 		logger.info("Building model")
 		start = time.time()
 
-		model = DeepPairWiseWord(config)
+		model = DeepPairWiseWord(config,true_dict,fake_dict)
 	
 		logger.info("time to build the model: %d", time.time() - start)
 		logger.info("the output path: %s", model.Config.output_path)
